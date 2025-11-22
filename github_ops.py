@@ -1,6 +1,5 @@
 import requests
 import base64
-import difflib
 
 def get_file_content(token, owner, repo, path, branch="main"):
     """Fetches file content from GitHub."""
@@ -23,7 +22,7 @@ def get_repo_structure(token, owner, repo, branch="main"):
     
     # Files to explicitly include even if they don't have standard extensions
     config_files = {'Procfile', 'Dockerfile', 'Makefile', '.gitignore', 'requirements.txt'}
-    allowed_extensions = ('.py', '.md', '.txt', '.js', '.html', '.css', '.json', '.yml', '.yaml')
+    allowed_extensions = ('.py', '.md', '.txt', '.js', '.html', '.css', '.json')
 
     files_context = ""
     if response.status_code == 200:
@@ -37,181 +36,71 @@ def get_repo_structure(token, owner, repo, branch="main"):
             if item['type'] == 'blob' and (is_code or is_config):
                 content, _ = get_file_content(token, owner, repo, path, branch)
                 if content:
-                    files_context += f"\n{'='*60}\n"
-                    files_context += f"FILE: {path}\n"
-                    files_context += f"{'='*60}\n"
-                    files_context += content + "\n"
+                    files_context += f"\n--- FILE: {path} ---\n"
+                    # Add line numbers to context for easier LLM targeting
+                    lines = content.split('\n')
+                    for i, line in enumerate(lines, 1):
+                        files_context += f"{i} | {line}\n"
                         
     return files_context
 
-def normalize_whitespace(text):
-    """Normalize whitespace for more flexible matching."""
-    # Normalize line endings
-    text = text.replace('\r\n', '\n')
-    # Normalize tabs to 4 spaces
-    text = text.replace('\t', '    ')
-    return text
-
-def find_in_content(content, search_text):
-    """
-    Find search_text in content with normalized whitespace.
-    Returns (index, match_found) or (None, False)
-    """
-    normalized_content = normalize_whitespace(content)
-    normalized_search = normalize_whitespace(search_text)
-    
-    index = normalized_content.find(normalized_search)
-    if index != -1:
-        return index, True
-    
-    return None, False
-
-def find_similar_text(content, search_text, n=3):
-    """Find similar text in content for helpful error messages."""
-    lines = content.split('\n')
-    search_lines = search_text.split('\n')
-    
-    if not search_lines:
-        return []
-    
-    # Look for lines that contain the first line of search text
-    first_search_line = search_lines[0].strip()
-    suggestions = []
-    
-    for i, line in enumerate(lines):
-        if first_search_line in line:
-            # Get context around this line
-            start = max(0, i)
-            end = min(len(lines), i + len(search_lines))
-            context = '\n'.join(lines[start:end])
-            suggestions.append(context)
-            if len(suggestions) >= n:
-                break
-    
-    return suggestions
-
 def apply_changes_locally(original_content, changes):
     """
-    Applies chunk-based changes to content.
-    
-    Operations:
-    - replace: Find and replace code chunks
-    - insert: Insert code at a specific position relative to anchor
-    - erase: Remove code chunk (same as replace with "")
-    - write: Overwrite entire file
-    - delete_file: Signal file deletion
+    Applies changes to the content string.
+    CRITICAL: Sorts by line number DESCENDING so early edits don't shift later line numbers.
     """
-    content = original_content
+    lines = original_content.split('\n')
     
-    for change in changes:
-        action = change.get('action')
-        
-        if action == 'write':
-            # Complete file overwrite
-            content = change.get('content', '')
-            
-        elif action == 'delete_file':
-            # Signal deletion
-            return None
-            
-        elif action == 'replace':
-            search_text = change.get('search', '')
-            replace_text = change.get('replace', '')
-            
-            if not search_text:
-                print(f"Warning: Replace operation missing 'search' field")
-                continue
-            
-            index, found = find_in_content(content, search_text)
-            
-            if found:
-                # Calculate actual length to replace (accounting for normalization)
-                normalized_content = normalize_whitespace(content)
-                normalized_search = normalize_whitespace(search_text)
-                
-                # Find in normalized, replace in original
-                norm_index = normalized_content.find(normalized_search)
-                
-                # Map back to original indices (this is approximate but works well)
-                before_normalized = normalized_content[:norm_index]
-                before_original = content[:len(before_normalized)]
-                
-                # Find actual start in original
-                actual_start = len(before_original)
-                actual_end = actual_start + len(search_text)
-                
-                # Replace
-                content = content[:actual_start] + replace_text + content[actual_end:]
-            else:
-                # Provide helpful error message
-                suggestions = find_similar_text(content, search_text)
-                print(f"Warning: Could not find search text for replace operation")
-                print(f"Searched for:\n{search_text[:100]}...")
-                if suggestions:
-                    print(f"Similar code found:\n{suggestions[0][:100]}...")
-                    
-        elif action == 'erase':
-            # Erase is just replace with empty string
-            search_text = change.get('search', '')
-            
-            if not search_text:
-                print(f"Warning: Erase operation missing 'search' field")
-                continue
-                
-            index, found = find_in_content(content, search_text)
-            
-            if found:
-                normalized_content = normalize_whitespace(content)
-                normalized_search = normalize_whitespace(search_text)
-                norm_index = normalized_content.find(normalized_search)
-                
-                before_normalized = normalized_content[:norm_index]
-                before_original = content[:len(before_normalized)]
-                
-                actual_start = len(before_original)
-                actual_end = actual_start + len(search_text)
-                
-                content = content[:actual_start] + content[actual_end:]
-            else:
-                print(f"Warning: Could not find search text for erase operation")
-                
-        elif action == 'insert':
-            search_text = change.get('search', '')
-            insert_text = change.get('insert', '')
-            position = change.get('position', 'after')  # 'before', 'after', 'start', 'end'
-            
-            if position == 'start':
-                content = insert_text + content
-                
-            elif position == 'end':
-                content = content + insert_text
-                
-            else:
-                if not search_text:
-                    print(f"Warning: Insert operation missing 'search' anchor")
-                    continue
-                    
-                index, found = find_in_content(content, search_text)
-                
-                if found:
-                    normalized_content = normalize_whitespace(content)
-                    normalized_search = normalize_whitespace(search_text)
-                    norm_index = normalized_content.find(normalized_search)
-                    
-                    before_normalized = normalized_content[:norm_index]
-                    before_original = content[:len(before_normalized)]
-                    
-                    actual_start = len(before_original)
-                    
-                    if position == 'before':
-                        content = content[:actual_start] + insert_text + content[actual_start:]
-                    else:  # after
-                        actual_end = actual_start + len(search_text)
-                        content = content[:actual_end] + insert_text + content[actual_end:]
-                else:
-                    print(f"Warning: Could not find anchor text for insert operation")
+    # Priority for same-line operations: 
+    # We want 'erase' to happen BEFORE 'insert' at the same line to effect a clean replacement.
+    # Since we sort Reverse=True (descending), we give 'erase' a higher priority value.
+    action_priority = {
+        'delete_file': 3,
+        'erase': 2,
+        'insert': 1,
+        'write': 0
+    }
 
-    return content
+    # Sort changes: 
+    # 1. Line Number (Desc) - Process bottom of file first
+    # 2. Action Priority (Desc) - Process Erase before Insert on same line
+    sorted_changes = sorted(changes, key=lambda x: (x.get('line', 0), action_priority.get(x.get('action'), 0)), reverse=True)
+
+    for change in sorted_changes:
+        action = change.get('action')
+        line_idx = change.get('line', 1) - 1  # Convert 1-based to 0-based
+        content = change.get('content', "")
+
+        if action == 'insert':
+            # Insert adds content AT that index
+            if 0 <= line_idx <= len(lines) + 1:
+                new_lines = content.split('\n')
+                lines[line_idx:line_idx] = new_lines
+
+        elif action == 'erase':
+            # content to erase must match exactly
+            target_lines = content.split('\n')
+            span = len(target_lines)
+            
+            # Check bounds
+            if line_idx + span <= len(lines):
+                current_slice = lines[line_idx : line_idx + span]
+                # Exact match check
+                if current_slice == target_lines:
+                    del lines[line_idx : line_idx + span]
+                else:
+                    print(f"Skipping Erase: Content mismatch at line {line_idx+1}")
+                    print(f"Expected: {target_lines}")
+                    print(f"Found: {current_slice}")
+
+        elif action == 'write':
+            # Overwrite entire file
+            lines = content.split('\n')
+
+        elif action == 'delete_file':
+            return None # Signal to delete
+
+    return "\n".join(lines)
 
 def push_to_github(token, owner, repo, file_path, new_content, sha, branch="main"):
     """Push updated content to GitHub."""

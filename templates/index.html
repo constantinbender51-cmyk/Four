@@ -2,32 +2,178 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Repo Agent</title>
     <style>
-        :root { --bg: #1e1e1e; --fg: #d4d4d4; --accent: #007acc; --panel: #252526; }
-        body { background: var(--bg); color: var(--fg); font-family: monospace; margin: 0; display: flex; flex-direction: column; height: 100vh; }
-        header { background: var(--panel); padding: 10px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; }
+        /* --- THEMING --- */
+        :root {
+            /* Default Dark Mode */
+            --bg: #1e1e1e;
+            --fg: #d4d4d4;
+            --accent: #007acc;
+            --panel: #252526;
+            --border: #333;
+            --input-bg: #3c3c3c;
+            --msg-user: #007acc;
+            --msg-bot: #252526;
+        }
+
+        [data-theme="light"] {
+            --bg: #f0f0f0;
+            --fg: #1f1f1f;
+            --accent: #005a9e;
+            --panel: #ffffff;
+            --border: #ccc;
+            --input-bg: #ffffff;
+            --msg-user: #005a9e;
+            --msg-bot: #e0e0e0;
+        }
+
+        /* --- BASE LAYOUT --- */
+        body { 
+            background: var(--bg); 
+            color: var(--fg); 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji"; /* System font for UI, Monospace for code */
+            margin: 0; 
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
+            transition: background 0.3s, color 0.3s;
+        }
+
+        /* --- HEADER --- */
+        header { 
+            background: var(--panel); 
+            padding: 10px 20px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            border-bottom: 1px solid var(--border); 
+            flex-wrap: wrap;
+            gap: 10px;
+        }
         
-        #chat-container { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 15px; }
-        .msg { max-width: 80%; padding: 10px; border-radius: 5px; }
-        .user { align-self: flex-end; background: var(--accent); color: white; }
-        .bot { align-self: flex-start; background: var(--panel); border: 1px solid #333; white-space: pre-wrap; }
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        /* --- CHAT AREA --- */
+        #chat-container { 
+            flex: 1; 
+            overflow-y: auto; 
+            padding: 20px; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 15px; 
+        }
         
-        #controls { padding: 20px; background: var(--panel); display: flex; gap: 10px; }
-        input, select, textarea { background: #3c3c3c; border: 1px solid #555; color: white; padding: 8px; border-radius: 4px; }
-        textarea { flex: 1; resize: none; height: 50px; }
-        button { background: var(--accent); color: white; border: none; cursor: pointer; padding: 0 20px; }
+        .msg { 
+            max-width: 85%; 
+            padding: 12px 16px; 
+            border-radius: 8px; 
+            font-family: monospace; /* Keep code feel for chat */
+            line-height: 1.5;
+            word-wrap: break-word;
+        }
         
-        .settings-modal { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--panel); padding: 20px; border: 1px solid #555; z-index: 10; display: none; box-shadow: 0 0 20px rgba(0,0,0,0.5); }
-        .settings-modal input { display: block; margin-bottom: 10px; width: 250px; }
-        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: none; z-index: 5; }
+        .user { 
+            align-self: flex-end; 
+            background: var(--msg-user); 
+            color: white; 
+        }
+        
+        .bot { 
+            align-self: flex-start; 
+            background: var(--msg-bot); 
+            border: 1px solid var(--border); 
+            white-space: pre-wrap; 
+        }
+
+        /* --- INPUT AREA --- */
+        #controls { 
+            padding: 20px; 
+            background: var(--panel); 
+            display: flex; 
+            gap: 10px; 
+            border-top: 1px solid var(--border);
+        }
+        
+        input, select, textarea { 
+            background: var(--input-bg); 
+            border: 1px solid var(--border); 
+            color: var(--fg); 
+            padding: 10px; 
+            border-radius: 4px; 
+            font-family: inherit;
+        }
+        
+        textarea { 
+            flex: 1; 
+            resize: none; 
+            height: 50px; 
+        }
+        
+        button { 
+            background: var(--accent); 
+            color: white; 
+            border: none; 
+            cursor: pointer; 
+            padding: 10px 20px; 
+            border-radius: 4px;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+        
+        button:hover { opacity: 0.9; }
+        button.secondary { background: transparent; border: 1px solid var(--border); color: var(--fg); }
+
+        /* --- MODAL --- */
+        .settings-modal { 
+            position: fixed; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%); 
+            background: var(--panel); 
+            padding: 25px; 
+            border: 1px solid var(--border); 
+            z-index: 10; 
+            display: none; 
+            box-shadow: 0 4px 30px rgba(0,0,0,0.5); 
+            border-radius: 8px;
+            width: 400px;
+            max-width: 90%;
+            box-sizing: border-box;
+        }
+        
+        .settings-modal h3 { margin-top: 0; }
+        .settings-modal input { display: block; margin-bottom: 15px; width: 100%; box-sizing: border-box; }
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; z-index: 5; backdrop-filter: blur(2px); }
+
+        /* --- MOBILE RESPONSE --- */
+        @media (max-width: 768px) {
+            header { flex-direction: column; align-items: stretch; }
+            .header-controls { justify-content: space-between; }
+            .header-controls select { flex: 1; }
+            
+            #controls { flex-direction: column; }
+            textarea { height: 60px; }
+            button { height: 44px; } /* Easy touch target */
+            
+            .msg { max-width: 95%; }
+        }
     </style>
 </head>
 <body>
 
 <header>
-    <div>
-        <span>Agent Config: </span>
+    <div style="font-weight: bold; display:flex; align-items:center; gap:10px;">
+        <span>🤖 AI Agent</span>
+        <button class="secondary" id="themeToggle" onclick="toggleTheme()" style="padding: 5px 10px;">🌙</button>
+    </div>
+    <div class="header-controls">
         <select id="provider">
             <option value="gemini">Gemini</option>
             <option value="deepseek">DeepSeek</option>
@@ -38,8 +184,8 @@
             <option value="deepseek-coder">DeepSeek Coder</option>
             <option value="deepseek-chat">DeepSeek Chat</option>
         </select>
+        <button onclick="toggleSettings()">⚙️ API Keys</button>
     </div>
-    <button onclick="toggleSettings()">🔑 API Keys & Repo</button>
 </header>
 
 <div id="chat-container"></div>
@@ -49,22 +195,48 @@
     <button onclick="sendMessage()">Send</button>
 </div>
 
-<div class="overlay" id="overlay"></div>
+<div class="overlay" id="overlay" onclick="toggleSettings()"></div>
 <div class="settings-modal" id="settingsModal">
     <h3>Configuration</h3>
     <input type="text" id="apiKey" placeholder="LLM API Key (Gemini/DeepSeek)">
     <input type="text" id="ghToken" placeholder="GitHub PAT (Fine-grained)">
     <input type="text" id="ghUser" placeholder="GitHub Username">
     <input type="text" id="ghRepo" placeholder="Repository Name">
-    <button onclick="saveSettings()">Save to Browser Memory</button>
+    <div style="display:flex; justify-content: flex-end; gap: 10px;">
+        <button class="secondary" onclick="toggleSettings()">Cancel</button>
+        <button onclick="saveSettings()">Save Keys</button>
+    </div>
 </div>
 
 <script>
-    // Load settings on boot
+    // --- THEME LOGIC ---
+    function initTheme() {
+        const saved = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', saved);
+        updateThemeIcon(saved);
+    }
+
+    function toggleTheme() {
+        const current = document.documentElement.getAttribute('data-theme');
+        const next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+        updateThemeIcon(next);
+    }
+
+    function updateThemeIcon(theme) {
+        const btn = document.getElementById('themeToggle');
+        btn.innerText = theme === 'dark' ? '🌙' : '☀️';
+    }
+
+    // Initialize Theme immediately
+    initTheme();
+
+    // --- APP LOGIC ---
     const load = (id) => document.getElementById(id).value = localStorage.getItem(id) || '';
     ['apiKey', 'ghToken', 'ghUser', 'ghRepo'].forEach(load);
 
-    let chatHistory = []; // Store last 10 messages here
+    let chatHistory = [];
 
     function toggleSettings() {
         const el = document.getElementById('settingsModal');
@@ -110,9 +282,8 @@
             });
             const data = await res.json();
             
-            // Remove loading msg
             const container = document.getElementById('chat-container');
-            container.removeChild(container.lastChild);
+            container.removeChild(container.lastChild); // Remove loading msg
 
             if(data.execution_log && data.execution_log.length > 0) {
                 addMsg('bot', `[System]: Executed changes:\n${data.execution_log.join('\n')}`);
@@ -132,7 +303,6 @@
         container.appendChild(div);
         container.scrollTop = container.scrollHeight;
 
-        // Update history logic
         if (sender !== 'system') {
             chatHistory.push({sender, text});
             if (chatHistory.length > 10) chatHistory.shift();

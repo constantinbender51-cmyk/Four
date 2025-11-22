@@ -36,7 +36,12 @@ def get_repo_structure(token, owner, repo, branch="main"):
             if item['type'] == 'blob' and (is_code or is_config):
                 content, _ = get_file_content(token, owner, repo, path, branch)
                 if content:
-                    files_context += f"\n--- FILE: {path} ---\n{content}\n"
+                    files_context += f"\n--- FILE: {path} ---\n"
+                    # Add line numbers to context for easier LLM targeting
+                    lines = content.split('\n')
+                    for i, line in enumerate(lines, 1):
+                        files_context += f"{i} | {line}\n"
+                        
     return files_context
 
 def apply_changes_locally(original_content, changes):

@@ -274,12 +274,21 @@
 
         addMsg('bot', "Thinking & Checking Repo...");
 
+        // Set up AbortController for 5-minute timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 300000); // 300,000 ms = 5 mins
+
         try {
             const res = await fetch('/api/chat', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(payload)
+                body: JSON.stringify(payload),
+                signal: controller.signal // Link signal to fetch
             });
+            
+            // Clear timeout if successful response
+            clearTimeout(timeoutId);
+
             const data = await res.json();
             
             const container = document.getElementById('chat-container');
@@ -291,7 +300,13 @@
             addMsg('bot', data.response);
 
         } catch (e) {
-            addMsg('bot', `Error: ${e}`);
+            const container = document.getElementById('chat-container');
+            // Check if it was our timeout
+            if (e.name === 'AbortError') {
+                 addMsg('bot', `Error: Request timed out after 5 minutes.`);
+            } else {
+                 addMsg('bot', `Error: ${e}`);
+            }
         }
     }
 
@@ -312,3 +327,4 @@
 
 </body>
 </html>
+

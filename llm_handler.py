@@ -19,16 +19,18 @@ The "changes" schema:
     "action": "write", "file": "new_file.py", "content": "full file content"
   },
   {
-    "action": "delete_file", "file": "path/to/obsolete_file.py"
+    "action": "delete_file", "file": "path/to/obsolete.py"
   }
 ]
 
-RULES:
+CRITICAL RULES FOR LINE NUMBERS:
 1. 'line' is 1-based.
-2. 'erase' content must match the file EXACTLY or it will fail.
-3. Multiple changes are allowed.
-4. 'delete_file' removes the file entirely from the repository.
-5. You see the file contents in the context below.
+2. ALWAYS use the ORIGINAL line numbers as seen in the provided file context.
+3. DO NOT calculate line shifts yourself. The system applies changes from bottom-to-top automatically.
+4. To REPLACE a line (e.g., line 5): Issue an 'erase' for line 5 AND an 'insert' for line 5. The system will handle the order.
+
+Context:
+You see the file contents below.
 """
 
 def query_llm(provider, api_key, model_name, history, repo_context, user_msg):

@@ -1,89 +1,403 @@
-from flask import Flask, render_template, request, jsonify
-import github_ops
-import llm_handler
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Repo Agent</title>
+    <style>
+        /* --- THEMING --- */
+        :root {
+            /* Default Dark Mode */
+            --bg: #1e1e1e;
+            --fg: #d4d4d4;
+            --accent: #007acc;
+            --panel: #252526;
+            --border: #333;
+            --input-bg: #3c3c3c;
+            --msg-user: #007acc;
+            --msg-bot: #252526;
+            --msg-system: #2d2d30;
+        }
 
-app = Flask(__name__)
+        [data-theme="light"] {
+            --bg: #f0f0f0;
+            --fg: #1f1f1f;
+            --accent: #005a9e;
+            --panel: #ffffff;
+            --border: #ccc;
+            --input-bg: #ffffff;
+            --msg-user: #005a9e;
+            --msg-bot: #e0e0e0;
+            --msg-system: #f5f5f5;
+        }
 
-@app.route('/')
-def home():
-    return render_template('index.html')
+        /* --- BASE LAYOUT --- */
+        body { 
+            background: var(--bg); 
+            color: var(--fg); 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0; 
+            display: flex; 
+            flex-direction: column; 
+            height: 100vh; 
+            transition: background 0.3s, color 0.3s;
+        }
 
-@app.route('/api/chat', methods=['POST'])
-def chat():
-    data = request.json
-    
-    # Credentials & Config
-    gh_token = data.get('ghToken')
-    gh_user = data.get('ghUser')
-    gh_repo = data.get('ghRepo')
-    
-    api_key = data.get('apiKey')
-    provider = data.get('provider') # 'gemini' or 'deepseek'
-    model = data.get('model')
-    
-    history = data.get('history', [])
-    user_msg = data.get('message')
-    is_review = data.get('is_review', False)
+        /* --- HEADER --- */
+        header { 
+            background: var(--panel); 
+            padding: 10px 20px; 
+            display: flex; 
+            justify-content: space-between; 
+            align-items: center; 
+            border-bottom: 1px solid var(--border); 
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+        
+        .header-controls {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
 
-    # 1. Fetch Repo Context
-    try:
-        repo_context = github_ops.get_repo_structure(gh_token, gh_user, gh_repo)
-    except Exception as e:
-        return jsonify({"error": f"GitHub Error: {str(e)}"}), 500
+        /* --- CHAT AREA --- */
+        #chat-container { 
+            flex: 1; 
+            overflow-y: auto; 
+            padding: 20px; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 15px; 
+        }
+        
+        .msg { 
+            max-width: 85%; 
+            padding: 12px 16px; 
+            border-radius: 8px; 
+            font-family: monospace;
+            line-height: 1.5;
+            word-wrap: break-word;
+        }
+        
+        .user { 
+            align-self: flex-end; 
+            background: var(--msg-user); 
+            color: white; 
+        }
+        
+        .bot { 
+            align-self: flex-start; 
+            background: var(--msg-bot); 
+            border: 1px solid var(--border); 
+            white-space: pre-wrap; 
+        }
 
-    # 2. Query LLM
-    llm_response = llm_handler.query_llm(provider, api_key, model, history, repo_context, user_msg)
-    
-    # 3. Process Changes
-    changes = llm_response.get('changes', [])
-    execution_log = []
-    made_changes = False
+        .system {
+            align-self: center;
+            background: var(--msg-system);
+            border: 1px solid var(--border);
+            color: var(--accent);
+            font-size: 0.9em;
+            max-width: 95%;
+            font-weight: 500;
+        }
 
-    if changes:
-        made_changes = True
-        # Group by file to minimize API calls
-        changes_by_file = {}
-        for change in changes:
-            fname = change['file']
-            if fname not in changes_by_file:
-                changes_by_file[fname] = []
-            changes_by_file[fname].append(change)
+        /* --- INPUT AREA --- */
+        #controls { 
+            padding: 20px; 
+            background: var(--panel); 
+            display: flex; 
+            gap: 10px; 
+            border-top: 1px solid var(--border);
+        }
+        
+        input, select, textarea { 
+            background: var(--input-bg); 
+            border: 1px solid var(--border); 
+            color: var(--fg); 
+            padding: 10px; 
+            border-radius: 4px; 
+            font-family: inherit;
+        }
+        
+        textarea { 
+            flex: 1; 
+            resize: none; 
+            height: 50px; 
+        }
+        
+        button { 
+            background: var(--accent); 
+            color: white; 
+            border: none; 
+            cursor: pointer; 
+            padding: 10px 20px; 
+            border-radius: 4px;
+            font-weight: 600;
+            transition: opacity 0.2s;
+        }
+        
+        button:hover { opacity: 0.9; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        button.secondary { background: transparent; border: 1px solid var(--border); color: var(--fg); }
 
-        for fname, file_changes in changes_by_file.items():
-            try:
-                # Fetch specific file content
-                content, sha = github_ops.get_file_content(gh_token, gh_user, gh_repo, fname)
-                
-                # Handle case where file doesn't exist (for new file creation)
-                if content is None: content = "" 
-                
-                # Apply Logic
-                new_content = github_ops.apply_changes_locally(content, file_changes)
-                
-                if new_content is None:
-                    # Logic to delete file via API
-                    if sha: # Can only delete if it exists remotely
-                        github_ops.delete_file_from_github(gh_token, gh_user, gh_repo, fname, sha)
-                        execution_log.append(f"🗑️ Deleted {fname}")
-                    else:
-                        execution_log.append(f"⚠️ Skipped delete {fname} (File not found)")
-                else:
-                    # Push to GitHub
-                    github_ops.push_to_github(gh_token, gh_user, gh_repo, fname, new_content, sha)
-                    execution_log.append(f"✅ Updated {fname}")
-            except Exception as e:
-                execution_log.append(f"❌ Failed to update {fname}: {str(e)}")
-                made_changes = False  # Don't trigger review if changes failed
+        /* --- MODAL --- */
+        .settings-modal { 
+            position: fixed; 
+            top: 50%; 
+            left: 50%; 
+            transform: translate(-50%, -50%); 
+            background: var(--panel); 
+            padding: 25px; 
+            border: 1px solid var(--border); 
+            z-index: 10; 
+            display: none; 
+            box-shadow: 0 4px 30px rgba(0,0,0,0.5); 
+            border-radius: 8px;
+            width: 400px;
+            max-width: 90%;
+            box-sizing: border-box;
+        }
+        
+        .settings-modal h3 { margin-top: 0; }
+        .settings-modal input { display: block; margin-bottom: 15px; width: 100%; box-sizing: border-box; }
+        .overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.6); display: none; z-index: 5; backdrop-filter: blur(2px); }
 
-    # 4. Build Response
-    response = {
-        "response": llm_response.get('message', "Processed"),
-        "execution_log": execution_log,
-        "made_changes": made_changes,
-        "needs_review": made_changes and not is_review
+        /* --- MOBILE RESPONSE --- */
+        @media (max-width: 768px) {
+            header { flex-direction: column; align-items: stretch; }
+            .header-controls { justify-content: space-between; }
+            .header-controls select { flex: 1; }
+            
+            #controls { flex-direction: column; }
+            textarea { height: 60px; }
+            button { height: 44px; }
+            
+            .msg { max-width: 95%; }
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <div style="font-weight: bold; display:flex; align-items:center; gap:10px;">
+        <span>🤖 AI Repo Agent</span>
+        <button class="secondary" id="themeToggle" onclick="toggleTheme()" style="padding: 5px 10px;">🌙</button>
+    </div>
+    <div class="header-controls">
+        <select id="provider">
+            <option value="gemini">Gemini</option>
+            <option value="deepseek">DeepSeek</option>
+        </select>
+        <select id="model">
+            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+            <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+            <option value="deepseek-coder">DeepSeek Coder</option>
+            <option value="deepseek-chat">DeepSeek Chat</option>
+        </select>
+        <button onclick="toggleSettings()">⚙️ API Keys</button>
+    </div>
+</header>
+
+<div id="chat-container"></div>
+
+<div id="controls">
+    <textarea id="userInput" placeholder="Instruct file changes..." onkeydown="handleKeyPress(event)"></textarea>
+    <button id="sendBtn" onclick="sendMessage()">Send</button>
+</div>
+
+<div class="overlay" id="overlay" onclick="toggleSettings()"></div>
+<div class="settings-modal" id="settingsModal">
+    <h3>Configuration</h3>
+    <input type="text" id="apiKey" placeholder="LLM API Key (Gemini/DeepSeek)">
+    <input type="text" id="ghToken" placeholder="GitHub PAT (Fine-grained)">
+    <input type="text" id="ghUser" placeholder="GitHub Username">
+    <input type="text" id="ghRepo" placeholder="Repository Name">
+    <div style="display:flex; justify-content: flex-end; gap: 10px;">
+        <button class="secondary" onclick="toggleSettings()">Cancel</button>
+        <button onclick="saveSettings()">Save Keys</button>
+    </div>
+</div>
+
+<script>
+    // --- THEME LOGIC ---
+    function initTheme() {
+        const saved = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', saved);
+        updateThemeIcon(saved);
     }
-    
-    return jsonify(response)
 
-if __name__ == '__main__':
-    app.run(debug=True, port=5000, host='0.0.0.0')
+    function toggleTheme() {
+        const current = document.documentElement.getAttribute('data-theme');
+        const next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+        updateThemeIcon(next);
+    }
+
+    function updateThemeIcon(theme) {
+        const btn = document.getElementById('themeToggle');
+        btn.innerText = theme === 'dark' ? '🌙' : '☀️';
+    }
+
+    initTheme();
+
+    // --- APP LOGIC ---
+    const load = (id) => document.getElementById(id).value = localStorage.getItem(id) || '';
+    ['apiKey', 'ghToken', 'ghUser', 'ghRepo'].forEach(load);
+
+    let chatHistory = [];
+    let isProcessing = false;
+
+    function toggleSettings() {
+        const el = document.getElementById('settingsModal');
+        const ov = document.getElementById('overlay');
+        const disp = el.style.display === 'block' ? 'none' : 'block';
+        el.style.display = disp;
+        ov.style.display = disp;
+    }
+
+    function saveSettings() {
+        ['apiKey', 'ghToken', 'ghUser', 'ghRepo'].forEach(id => {
+            localStorage.setItem(id, document.getElementById(id).value);
+        });
+        toggleSettings();
+    }
+
+    function handleKeyPress(event) {
+        // Send on Enter, new line on Shift+Enter
+        if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            sendMessage();
+        }
+    }
+
+    async function sendMessage() {
+        const input = document.getElementById('userInput');
+        const text = input.value.trim();
+        if (!text || isProcessing) return;
+
+        addMsg('user', text);
+        input.value = '';
+
+        await processLLMRequest(text, false, 0);
+    }
+
+    async function processLLMRequest(message, isReview = false, reviewDepth = 0) {
+        const MAX_REVIEW_DEPTH = 3;
+        
+        if (reviewDepth >= MAX_REVIEW_DEPTH) {
+            addMsg('system', '⚠️ Maximum review depth reached. Changes complete.');
+            return;
+        }
+
+        isProcessing = true;
+        updateSendButton(true);
+
+        const payload = {
+            message: message,
+            history: chatHistory,
+            apiKey: localStorage.getItem('apiKey'),
+            ghToken: localStorage.getItem('ghToken'),
+            ghUser: localStorage.getItem('ghUser'),
+            ghRepo: localStorage.getItem('ghRepo'),
+            provider: document.getElementById('provider').value,
+            model: document.getElementById('model').value,
+            is_review: isReview
+        };
+
+        const statusMsg = isReview ? "🔍 Reviewing changes..." : "🔄 Processing...";
+        addMsg('system', statusMsg);
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 300000);
+
+        try {
+            const res = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
+            const data = await res.json();
+            
+            const container = document.getElementById('chat-container');
+            container.removeChild(container.lastChild); // Remove status msg
+
+            // Show execution log if changes were made
+            if(data.execution_log && data.execution_log.length > 0) {
+                const logPrefix = isReview ? '🔧 Corrections applied' : '📝 Changes applied';
+                addMsg('system', `${logPrefix}:\n${data.execution_log.join('\n')}`);
+            }
+            
+            // Show response
+            if (data.response) {
+                addMsg('bot', data.response);
+            }
+            
+            // If changes were made and this wasn't already a review, trigger automatic review
+            if (data.needs_review) {
+                // Wait a moment for UX
+                await new Promise(resolve => setTimeout(resolve, 800));
+                
+                // Automatically send review prompt
+                const reviewPrompt = `SYSTEM: You just pushed changes to the repository. The following operations were executed:
+${data.execution_log.join('\n')}
+
+Review the CURRENT state of the repository and:
+1. Verify the changes are syntactically correct (no syntax errors, proper indentation)
+2. Confirm the changes accomplish what was requested
+3. Check for any logic errors or unintended side effects
+4. If you find ANY issues, fix them immediately by providing corrected "changes"
+5. Report to the user what you changed and whether everything looks good now
+
+Be thorough and honest. If you spot problems, fix them right away.`;
+
+                await processLLMRequest(reviewPrompt, true, reviewDepth + 1);
+            } else {
+                isProcessing = false;
+                updateSendButton(false);
+            }
+
+        } catch (e) {
+            const container = document.getElementById('chat-container');
+            if (container.lastChild && container.lastChild.className.includes('system')) {
+                container.removeChild(container.lastChild);
+            }
+            if (e.name === 'AbortError') {
+                addMsg('system', `❌ Request timed out after 5 minutes.`);
+            } else {
+                addMsg('system', `❌ Error: ${e}`);
+            }
+            isProcessing = false;
+            updateSendButton(false);
+        }
+    }
+
+    function updateSendButton(disabled) {
+        const btn = document.getElementById('sendBtn');
+        btn.disabled = disabled;
+        btn.innerText = disabled ? 'Processing...' : 'Send';
+    }
+
+    function addMsg(sender, text) {
+        const container = document.getElementById('chat-container');
+        const div = document.createElement('div');
+        div.className = `msg ${sender}`;
+        div.innerText = text;
+        container.appendChild(div);
+        container.scrollTop = container.scrollHeight;
+
+        if (sender !== 'system') {
+            chatHistory.push({sender, text});
+            if (chatHistory.length > 20) chatHistory.shift();
+        }
+    }
+</script>
+
+</body>
+</html>

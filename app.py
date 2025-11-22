@@ -23,6 +23,7 @@ def chat():
     
     history = data.get('history', [])
     user_msg = data.get('message')
+    is_review = data.get('is_review', False)
 
     # 1. Fetch Repo Context
     try:
@@ -36,8 +37,10 @@ def chat():
     # 3. Process Changes
     changes = llm_response.get('changes', [])
     execution_log = []
+    made_changes = False
 
     if changes:
+        made_changes = True
         # Group by file to minimize API calls
         changes_by_file = {}
         for change in changes:
@@ -61,20 +64,26 @@ def chat():
                     # Logic to delete file via API
                     if sha: # Can only delete if it exists remotely
                         github_ops.delete_file_from_github(gh_token, gh_user, gh_repo, fname, sha)
-                        execution_log.append(f"Deleted {fname}")
+                        execution_log.append(f"🗑️ Deleted {fname}")
                     else:
-                        execution_log.append(f"Skipped delete {fname} (File not found)")
+                        execution_log.append(f"⚠️ Skipped delete {fname} (File not found)")
                 else:
                     # Push to GitHub
                     github_ops.push_to_github(gh_token, gh_user, gh_repo, fname, new_content, sha)
-                    execution_log.append(f"Updated {fname}")
+                    execution_log.append(f"✅ Updated {fname}")
             except Exception as e:
-                execution_log.append(f"Failed to update {fname}: {str(e)}")
+                execution_log.append(f"❌ Failed to update {fname}: {str(e)}")
+                made_changes = False  # Don't trigger review if changes failed
 
-    return jsonify({
+    # 4. Build Response
+    response = {
         "response": llm_response.get('message', "Processed"),
-        "execution_log": execution_log
-    })
+        "execution_log": execution_log,
+        "made_changes": made_changes,
+        "needs_review": made_changes and not is_review
+    }
+    
+    return jsonify(response)
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000, host='0.0.0.0')

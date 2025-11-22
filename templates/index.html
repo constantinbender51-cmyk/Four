@@ -16,7 +16,6 @@
             --input-bg: #3c3c3c;
             --msg-user: #007acc;
             --msg-bot: #252526;
-            --msg-system: #2d2d30;
         }
 
         [data-theme="light"] {
@@ -28,14 +27,13 @@
             --input-bg: #ffffff;
             --msg-user: #005a9e;
             --msg-bot: #e0e0e0;
-            --msg-system: #f5f5f5;
         }
 
         /* --- BASE LAYOUT --- */
         body { 
             background: var(--bg); 
             color: var(--fg); 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji"; /* System font for UI, Monospace for code */
             margin: 0; 
             display: flex; 
             flex-direction: column; 
@@ -76,7 +74,7 @@
             max-width: 85%; 
             padding: 12px 16px; 
             border-radius: 8px; 
-            font-family: monospace;
+            font-family: monospace; /* Keep code feel for chat */
             line-height: 1.5;
             word-wrap: break-word;
         }
@@ -92,16 +90,6 @@
             background: var(--msg-bot); 
             border: 1px solid var(--border); 
             white-space: pre-wrap; 
-        }
-
-        .system {
-            align-self: center;
-            background: var(--msg-system);
-            border: 1px solid var(--border);
-            color: var(--accent);
-            font-size: 0.9em;
-            max-width: 95%;
-            font-weight: 500;
         }
 
         /* --- INPUT AREA --- */
@@ -140,7 +128,6 @@
         }
         
         button:hover { opacity: 0.9; }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
         button.secondary { background: transparent; border: 1px solid var(--border); color: var(--fg); }
 
         /* --- MODAL --- */
@@ -173,7 +160,7 @@
             
             #controls { flex-direction: column; }
             textarea { height: 60px; }
-            button { height: 44px; }
+            button { height: 44px; } /* Easy touch target */
             
             .msg { max-width: 95%; }
         }
@@ -183,7 +170,7 @@
 
 <header>
     <div style="font-weight: bold; display:flex; align-items:center; gap:10px;">
-        <span>🤖 AI Repo Agent</span>
+        <span>🤖 AI Agent</span>
         <button class="secondary" id="themeToggle" onclick="toggleTheme()" style="padding: 5px 10px;">🌙</button>
     </div>
     <div class="header-controls">
@@ -204,8 +191,8 @@
 <div id="chat-container"></div>
 
 <div id="controls">
-    <textarea id="userInput" placeholder="Instruct file changes..." onkeydown="handleKeyPress(event)"></textarea>
-    <button id="sendBtn" onclick="sendMessage()">Send</button>
+    <textarea id="userInput" placeholder="Instruct file changes..."></textarea>
+    <button onclick="sendMessage()">Send</button>
 </div>
 
 <div class="overlay" id="overlay" onclick="toggleSettings()"></div>
@@ -242,6 +229,7 @@
         btn.innerText = theme === 'dark' ? '🌙' : '☀️';
     }
 
+    // Initialize Theme immediately
     initTheme();
 
     // --- APP LOGIC ---
@@ -249,7 +237,6 @@
     ['apiKey', 'ghToken', 'ghUser', 'ghRepo'].forEach(load);
 
     let chatHistory = [];
-    let isProcessing = false;
 
     function toggleSettings() {
         const el = document.getElementById('settingsModal');
@@ -266,122 +253,61 @@
         toggleSettings();
     }
 
-    function handleKeyPress(event) {
-        // Send on Enter, new line on Shift+Enter
-        if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault();
-            sendMessage();
-        }
-    }
-
     async function sendMessage() {
         const input = document.getElementById('userInput');
-        const text = input.value.trim();
-        if (!text || isProcessing) return;
+        const text = input.value;
+        if (!text) return;
 
         addMsg('user', text);
         input.value = '';
 
-        await processLLMRequest(text, false, 0);
-    }
-
-    async function processLLMRequest(message, isReview = false, reviewDepth = 0) {
-        const MAX_REVIEW_DEPTH = 3;
-        
-        if (reviewDepth >= MAX_REVIEW_DEPTH) {
-            addMsg('system', '⚠️ Maximum review depth reached. Changes complete.');
-            return;
-        }
-
-        isProcessing = true;
-        updateSendButton(true);
-
         const payload = {
-            message: message,
+            message: text,
             history: chatHistory,
             apiKey: localStorage.getItem('apiKey'),
             ghToken: localStorage.getItem('ghToken'),
             ghUser: localStorage.getItem('ghUser'),
             ghRepo: localStorage.getItem('ghRepo'),
             provider: document.getElementById('provider').value,
-            model: document.getElementById('model').value,
-            is_review: isReview
+            model: document.getElementById('model').value
         };
 
-        const statusMsg = isReview ? "🔍 Reviewing changes..." : "🔄 Processing...";
-        addMsg('system', statusMsg);
+        addMsg('bot', "Thinking & Checking Repo...");
 
+        // Set up AbortController for 5-minute timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 300000);
+        const timeoutId = setTimeout(() => controller.abort(), 300000); // 300,000 ms = 5 mins
 
         try {
             const res = await fetch('/api/chat', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
                 body: JSON.stringify(payload),
-                signal: controller.signal
+                signal: controller.signal // Link signal to fetch
             });
             
+            // Clear timeout if successful response
             clearTimeout(timeoutId);
+
             const data = await res.json();
             
             const container = document.getElementById('chat-container');
-            container.removeChild(container.lastChild); // Remove status msg
+            container.removeChild(container.lastChild); // Remove loading msg
 
-            // Show execution log if changes were made
             if(data.execution_log && data.execution_log.length > 0) {
-                const logPrefix = isReview ? '🔧 Corrections applied' : '📝 Changes applied';
-                addMsg('system', `${logPrefix}:\n${data.execution_log.join('\n')}`);
+                addMsg('bot', `[System]: Executed changes:\n${data.execution_log.join('\n')}`);
             }
-            
-            // Show response
-            if (data.response) {
-                addMsg('bot', data.response);
-            }
-            
-            // If changes were made and this wasn't already a review, trigger automatic review
-            if (data.needs_review) {
-                // Wait a moment for UX
-                await new Promise(resolve => setTimeout(resolve, 800));
-                
-                // Automatically send review prompt
-                const reviewPrompt = `SYSTEM: You just pushed changes to the repository. The following operations were executed:
-${data.execution_log.join('\n')}
-
-Review the CURRENT state of the repository and:
-1. Verify the changes are syntactically correct (no syntax errors, proper indentation)
-2. Confirm the changes accomplish what was requested
-3. Check for any logic errors or unintended side effects
-4. If you find ANY issues, fix them immediately by providing corrected "changes"
-5. Report to the user what you changed and whether everything looks good now
-
-Be thorough and honest. If you spot problems, fix them right away.`;
-
-                await processLLMRequest(reviewPrompt, true, reviewDepth + 1);
-            } else {
-                isProcessing = false;
-                updateSendButton(false);
-            }
+            addMsg('bot', data.response);
 
         } catch (e) {
             const container = document.getElementById('chat-container');
-            if (container.lastChild && container.lastChild.className.includes('system')) {
-                container.removeChild(container.lastChild);
-            }
+            // Check if it was our timeout
             if (e.name === 'AbortError') {
-                addMsg('system', `❌ Request timed out after 5 minutes.`);
+                 addMsg('bot', `Error: Request timed out after 5 minutes.`);
             } else {
-                addMsg('system', `❌ Error: ${e}`);
+                 addMsg('bot', `Error: ${e}`);
             }
-            isProcessing = false;
-            updateSendButton(false);
         }
-    }
-
-    function updateSendButton(disabled) {
-        const btn = document.getElementById('sendBtn');
-        btn.disabled = disabled;
-        btn.innerText = disabled ? 'Processing...' : 'Send';
     }
 
     function addMsg(sender, text) {
@@ -394,7 +320,7 @@ Be thorough and honest. If you spot problems, fix them right away.`;
 
         if (sender !== 'system') {
             chatHistory.push({sender, text});
-            if (chatHistory.length > 20) chatHistory.shift();
+            if (chatHistory.length > 10) chatHistory.shift();
         }
     }
 </script>

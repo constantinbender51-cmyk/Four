@@ -69,9 +69,19 @@ def query_llm(provider, api_key, model_name, history, repo_context, user_msg):
             )
             text_response = response.choices[0].message.content
             
-        # Clean code blocks if model messes up JSON constraint
-        clean_json = text_response.replace('```json', '').replace('```', '').strip()
-        return json.loads(clean_json)
+        # --- Robust JSON Extraction ---
+        # LLMs sometimes output conversational text before or after the JSON.
+        # We find the first '{' and the last '}' to extract the main JSON object.
+        start_idx = text_response.find('{')
+        end_idx = text_response.rfind('}')
+
+        if start_idx != -1 and end_idx != -1:
+            clean_json = text_response[start_idx : end_idx + 1]
+            return json.loads(clean_json)
+        else:
+            # Fallback if no braces found (rare if model follows prompt)
+            # Try standard strip in case it's just whitespace
+            return json.loads(text_response.strip())
 
     except Exception as e:
-        return {"message": f"Error calling API: {str(e)}", "changes": []}
+        return {"message": f"Error calling API or parsing JSON: {str(e)}", "changes": []}

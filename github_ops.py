@@ -20,14 +20,23 @@ def get_repo_structure(token, owner, repo, branch="main"):
     headers = {"Authorization": f"Bearer {token}"}
     response = requests.get(url, headers=headers)
     
+    # Files to explicitly include even if they don't have standard extensions
+    config_files = {'Procfile', 'Dockerfile', 'Makefile', '.gitignore', 'requirements.txt'}
+    allowed_extensions = ('.py', '.md', '.txt', '.js', '.html', '.css', '.json')
+
     files_context = ""
     if response.status_code == 200:
         tree = response.json().get('tree', [])
         for item in tree:
-            if item['type'] == 'blob' and item['path'].endswith(('.py', '.md', '.txt', '.js', '.html')):
-                content, _ = get_file_content(token, owner, repo, item['path'], branch)
+            path = item['path']
+            # Check if it's a blob (file) and matches our filter
+            is_config = path.split('/')[-1] in config_files
+            is_code = path.endswith(allowed_extensions)
+            
+            if item['type'] == 'blob' and (is_code or is_config):
+                content, _ = get_file_content(token, owner, repo, path, branch)
                 if content:
-                    files_context += f"\n--- FILE: {item['path']} ---\n{content}\n"
+                    files_context += f"\n--- FILE: {path} ---\n{content}\n"
     return files_context
 
 def apply_changes_locally(original_content, changes):
@@ -37,9 +46,20 @@ def apply_changes_locally(original_content, changes):
     """
     lines = original_content.split('\n')
     
-    # Sort changes: Primary key = Line Number (Desc), Secondary = Order in original request (Desc)
-    # We process from bottom to top.
-    sorted_changes = sorted(changes, key=lambda x: (x.get('line', 0), changes.index(x)), reverse=True)
+    # Priority for same-line operations: 
+    # We want 'erase' to happen BEFORE 'insert' at the same line to effect a clean replacement.
+    # Since we sort Reverse=True (descending), we give 'erase' a higher priority value.
+    action_priority = {
+        'delete_file': 3,
+        'erase': 2,
+        'insert': 1,
+        'write': 0
+    }
+
+    # Sort changes: 
+    # 1. Line Number (Desc) - Process bottom of file first
+    # 2. Action Priority (Desc) - Process Erase before Insert on same line
+    sorted_changes = sorted(changes, key=lambda x: (x.get('line', 0), action_priority.get(x.get('action'), 0)), reverse=True)
 
     for change in sorted_changes:
         action = change.get('action')
@@ -47,7 +67,7 @@ def apply_changes_locally(original_content, changes):
         content = change.get('content', "")
 
         if action == 'insert':
-            # Insert adds content AT that index, shifting existing down
+            # Insert adds content AT that index
             if 0 <= line_idx <= len(lines) + 1:
                 new_lines = content.split('\n')
                 lines[line_idx:line_idx] = new_lines
@@ -65,6 +85,8 @@ def apply_changes_locally(original_content, changes):
                     del lines[line_idx : line_idx + span]
                 else:
                     print(f"Skipping Erase: Content mismatch at line {line_idx+1}")
+                    print(f"Expected: {target_lines}")
+                    print(f"Found: {current_slice}")
 
         elif action == 'write':
             # Overwrite entire file
@@ -102,7 +124,5 @@ def delete_file_from_github(token, owner, repo, path, sha, branch="main"):
         "branch": branch
     }
     
-    # GitHub API DELETE expects JSON body for 'message' and 'sha'
-    # requests.delete supports 'json' parameter in newer versions, or use 'data'
     response = requests.delete(url, headers=headers, json=data)
     return response.status_code in [200, 204]

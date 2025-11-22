@@ -17,6 +17,9 @@ The "changes" schema:
   },
   {
     "action": "write", "file": "new_file.py", "content": "full file content"
+  },
+  {
+    "action": "delete_file", "file": "path/to/obsolete_file.py"
   }
 ]
 
@@ -24,7 +27,8 @@ RULES:
 1. 'line' is 1-based.
 2. 'erase' content must match the file EXACTLY or it will fail.
 3. Multiple changes are allowed.
-4. You see the file contents in the context below.
+4. 'delete_file' removes the file entirely from the repository.
+5. You see the file contents in the context below.
 """
 
 def query_llm(provider, api_key, model_name, history, repo_context, user_msg):

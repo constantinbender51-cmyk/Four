@@ -50,14 +50,20 @@ def chat():
             try:
                 # Fetch specific file content
                 content, sha = github_ops.get_file_content(gh_token, gh_user, gh_repo, fname)
-                if content is None: content = "" # New file
+                
+                # Handle case where file doesn't exist (for new file creation)
+                if content is None: content = "" 
                 
                 # Apply Logic
                 new_content = github_ops.apply_changes_locally(content, file_changes)
                 
                 if new_content is None:
-                    # Logic to delete file via API would go here
-                    execution_log.append(f"Deleted {fname}")
+                    # Logic to delete file via API
+                    if sha: # Can only delete if it exists remotely
+                        github_ops.delete_file_from_github(gh_token, gh_user, gh_repo, fname, sha)
+                        execution_log.append(f"Deleted {fname}")
+                    else:
+                        execution_log.append(f"Skipped delete {fname} (File not found)")
                 else:
                     # Push to GitHub
                     github_ops.push_to_github(gh_token, gh_user, gh_repo, fname, new_content, sha)

@@ -332,6 +332,7 @@
         <button class="secondary" id="toggle-browser" onclick="toggleFileBrowser()" style="padding: 5px 10px;">📁</button>
         <span>🤖 AI Agent</span>
         <button class="secondary" id="themeToggle" onclick="toggleTheme()" style="padding: 5px 10px;">🌙</button>
+        <button class="secondary" id="muteToggle" onclick="toggleMute()" style="padding: 5px 10px;">🔊</button>
     </div>
     <div class="header-controls">
         <select id="provider">
@@ -414,13 +415,66 @@
         btn.innerText = theme === 'dark' ? '🌙' : '☀️';
     }
 
+    // --- MUTE LOGIC ---
+    let isMuted = localStorage.getItem('muted') === 'true';
+    
+    function initMute() {
+        updateMuteIcon(isMuted);
+    }
+
+    function toggleMute() {
+        isMuted = !isMuted;
+        localStorage.setItem('muted', isMuted);
+        updateMuteIcon(isMuted);
+    }
+
+    function updateMuteIcon(muted) {
+        const btn = document.getElementById('muteToggle');
+        btn.innerText = muted ? '🔇' : '🔊';
+    }
+
+    function playAudio(audioBase64) {
+        if (isMuted || !audioBase64) return;
+        
+        try {
+            const audio = new Audio('data:audio/mp3;base64,' + audioBase64);
+            audio.play().catch(e => console.error('Audio playback error:', e));
+        } catch (e) {
+            console.error('Audio creation error:', e);
+        }
+    }
+
+    // Initialize Theme and Mute
     initTheme();
+    initMute();
 
     // --- APP LOGIC ---
     const load = (id) => document.getElementById(id).value = localStorage.getItem(id) || '';
     ['apiKey', 'ghToken', 'ghUser', 'ghRepo'].forEach(load);
 
     let chatHistory = [];
+    let heartbeatInterval = null;
+
+    // Keep-alive heartbeat
+    function startHeartbeat() {
+        if (heartbeatInterval) return;
+        heartbeatInterval = setInterval(async () => {
+            try {
+                await fetch('/api/heartbeat');
+            } catch (e) {
+                console.log('Heartbeat failed:', e);
+            }
+        }, 30000);
+    }
+
+    function stopHeartbeat() {
+        if (heartbeatInterval) {
+            clearInterval(heartbeatInterval);
+            heartbeatInterval = null;
+        }
+    }
+
+    startHeartbeat();
 
     function toggleSettings() {
         const el = document.getElementById('settingsModal');
@@ -464,32 +518,54 @@
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 300000);
 
-        try {
-            const res = await fetch('/api/chat', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(payload),
-                signal: controller.signal
-            });
-            
-            clearTimeout(timeoutId);
+        let retries = 3;
+        let success = false;
 
-            const data = await res.json();
-            
-            const container = document.getElementById('chat-container');
-            container.removeChild(container.lastChild);
+        while (retries > 0 && !success) {
+            try {
+                const res = await fetch('/api/chat', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Connection': 'keep-alive'
+                    },
+                    body: JSON.stringify(payload),
+                    signal: controller.signal,
+                    keepalive: true
+                });
+                
+                clearTimeout(timeoutId);
 
-            if(data.execution_log && data.execution_log.length > 0) {
-                addMsg('bot', `[System]: Executed changes:\n${data.execution_log.join('\n')}`);
-            }
-            addMsg('bot', data.response);
+                const data = await res.json();
+                
+                const container = document.getElementById('chat-container');
+                container.removeChild(container.lastChild);
 
-        } catch (e) {
-            const container = document.getElementById('chat-container');
-            if (e.name === 'AbortError') {
-                 addMsg('bot', `Error: Request timed out after 5 minutes.`);
-            } else {
-                 addMsg('bot', `Error: ${e}`);
+                if(data.execution_log && data.execution_log.length > 0) {
+                    addMsg('bot', `[System]: Executed changes:\n${data.execution_log.join('\n')}`);
+                }
+                addMsg('bot', data.response);
+                
+                if (data.audio) {
+                    playAudio(data.audio);
+                }
+
+                success = true;
+
+            } catch (e) {
+                retries--;
+                
+                if (retries === 0) {
+                    const container = document.getElementById('chat-container');
+                    if (e.name === 'AbortError') {
+                        addMsg('bot', `Error: Request timed out after 5 minutes.`);
+                    } else {
+                        addMsg('bot', `Error: ${e.message || e}`);
+                    }
+                } else {
+                    console.log(`Retry attempt ${4 - retries}/3...`);
+                    await new Promise(resolve => setTimeout(resolve, 2000));
+                }
             }
         }
     }

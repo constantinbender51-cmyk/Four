@@ -668,7 +668,7 @@
             const isFile = tree[name] === null;
 
             if (isFile) {
-                html += `<div class="file-item" onclick="openFile('${fullPath}')">
+                html += `<div class="file-item" onclick="openFile(event, '${fullPath}')">
                     📄 ${name}
                 </div>`;
             } else {
@@ -696,7 +696,7 @@
         icon.classList.toggle('open');
     }
 
-    async function openFile(filepath) {
+    async function openFile(event, filepath) {
         const ghToken = localStorage.getItem('ghToken');
         const ghUser = localStorage.getItem('ghUser');
         const ghRepo = localStorage.getItem('ghRepo');
@@ -721,8 +721,11 @@
                 document.getElementById('viewer-code').textContent = data.content;
             }
 
+            // Highlight active file
             document.querySelectorAll('.file-item').forEach(el => el.classList.remove('active'));
-            event.target.classList.add('active');
+            if (event && event.target) {
+                event.target.classList.add('active');
+            }
         } catch (e) {
             document.getElementById('viewer-code').textContent = `Error: ${e.message}`;
         }

@@ -15,6 +15,26 @@ def get_file_content(token, owner, repo, path, branch="main"):
         return decoded_content, file_sha
     return None, None
 
+def get_file_list(token, owner, repo, branch="main"):
+    """Fetches list of all files in the repository for file browser."""
+    url = f"https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1"
+    headers = {"Authorization": f"Bearer {token}"}
+    response = requests.get(url, headers=headers)
+    
+    files = []
+    if response.status_code == 200:
+        tree = response.json().get('tree', [])
+        for item in tree:
+            if item['type'] == 'blob':  # Only files, not directories
+                files.append({
+                    'path': item['path'],
+                    'size': item.get('size', 0)
+                })
+    else:
+        raise Exception(f"GitHub API error: {response.status_code} - {response.text}")
+    
+    return files
+
 def get_repo_structure(token, owner, repo, branch="main"):
     """Fetches all file paths and their contents for context."""
     url = f"https://api.github.com/repos/{owner}/{repo}/git/trees/{branch}?recursive=1"

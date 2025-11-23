@@ -11,6 +11,37 @@ app = Flask(__name__)
 def home():
     return render_template('index.html')
 
+@app.route('/api/files', methods=['POST'])
+def get_files():
+    """Get list of files in the repository"""
+    data = request.json
+    gh_token = data.get('ghToken')
+    gh_user = data.get('ghUser')
+    gh_repo = data.get('ghRepo')
+    
+    try:
+        files = github_ops.get_file_list(gh_token, gh_user, gh_repo)
+        return jsonify({"files": files})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/file-content', methods=['POST'])
+def get_file_content_route():
+    """Get content of a specific file"""
+    data = request.json
+    gh_token = data.get('ghToken')
+    gh_user = data.get('ghUser')
+    gh_repo = data.get('ghRepo')
+    filepath = data.get('filepath')
+    
+    try:
+        content, _ = github_ops.get_file_content(gh_token, gh_user, gh_repo, filepath)
+        if content is None:
+            return jsonify({"error": "File not found"}), 404
+        return jsonify({"content": content})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/chat', methods=['POST'])
 def chat():
     data = request.json

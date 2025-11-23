@@ -33,12 +33,149 @@
         body { 
             background: var(--bg); 
             color: var(--fg); 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji"; /* System font for UI, Monospace for code */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
             margin: 0; 
             display: flex; 
             flex-direction: column; 
             height: 100vh; 
             transition: background 0.3s, color 0.3s;
+        }
+
+        /* --- MAIN CONTENT AREA --- */
+        #main-content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* --- FILE BROWSER --- */
+        #file-browser {
+            width: 280px;
+            background: var(--panel);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            transition: transform 0.3s;
+        }
+
+        #file-browser.hidden {
+            transform: translateX(-100%);
+            position: absolute;
+            z-index: 3;
+        }
+
+        .browser-header {
+            padding: 12px 15px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-weight: 600;
+        }
+
+        .browser-header button {
+            padding: 4px 8px;
+            font-size: 12px;
+        }
+
+        #file-tree {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+        }
+
+        .file-item, .folder-item {
+            padding: 6px 8px;
+            cursor: pointer;
+            border-radius: 4px;
+            margin: 2px 0;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            user-select: none;
+            transition: background 0.15s;
+        }
+
+        .file-item:hover, .folder-item:hover {
+            background: var(--input-bg);
+        }
+
+        .file-item.active {
+            background: var(--accent);
+            color: white;
+        }
+
+        .folder-item {
+            font-weight: 500;
+        }
+
+        .folder-children {
+            margin-left: 16px;
+            display: none;
+        }
+
+        .folder-children.open {
+            display: block;
+        }
+
+        .folder-icon {
+            transition: transform 0.2s;
+        }
+
+        .folder-icon.open {
+            transform: rotate(90deg);
+        }
+
+        /* --- FILE VIEWER --- */
+        #file-viewer {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            box-shadow: 0 4px 30px rgba(0,0,0,0.5);
+            z-index: 15;
+            display: none;
+            width: 80%;
+            max-width: 900px;
+            max-height: 80vh;
+            flex-direction: column;
+        }
+
+        .viewer-header {
+            padding: 15px 20px;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .viewer-header h3 {
+            margin: 0;
+            font-size: 14px;
+            font-family: monospace;
+        }
+
+        .viewer-content {
+            padding: 20px;
+            overflow: auto;
+            flex: 1;
+        }
+
+        .viewer-content pre {
+            margin: 0;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 13px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+
+        #toggle-browser {
+            display: none;
         }
 
         /* --- HEADER --- */
@@ -74,7 +211,7 @@
             max-width: 85%; 
             padding: 12px 16px; 
             border-radius: 8px; 
-            font-family: monospace; /* Keep code feel for chat */
+            font-family: monospace;
             line-height: 1.5;
             word-wrap: break-word;
         }
@@ -160,9 +297,31 @@
             
             #controls { flex-direction: column; }
             textarea { height: 60px; }
-            button { height: 44px; } /* Easy touch target */
+            button { height: 44px; }
             
             .msg { max-width: 95%; }
+
+            #file-browser {
+                position: absolute;
+                width: 80%;
+                max-width: 300px;
+                height: 100%;
+                z-index: 10;
+            }
+
+            #file-browser.hidden {
+                transform: translateX(-100%);
+            }
+
+            #toggle-browser {
+                display: block;
+                padding: 5px 10px;
+            }
+
+            #file-viewer {
+                width: 95%;
+                max-height: 90vh;
+            }
         }
     </style>
 </head>
@@ -170,9 +329,9 @@
 
 <header>
     <div style="font-weight: bold; display:flex; align-items:center; gap:10px;">
+        <button class="secondary" id="toggle-browser" onclick="toggleFileBrowser()" style="padding: 5px 10px;">📁</button>
         <span>🤖 AI Agent</span>
         <button class="secondary" id="themeToggle" onclick="toggleTheme()" style="padding: 5px 10px;">🌙</button>
-        <button class="secondary" id="muteToggle" onclick="toggleMute()" style="padding: 5px 10px;">🔊</button>
     </div>
     <div class="header-controls">
         <select id="provider">
@@ -189,7 +348,21 @@
     </div>
 </header>
 
-<div id="chat-container"></div>
+<div id="main-content">
+    <div id="file-browser">
+        <div class="browser-header">
+            <span>📂 Files</span>
+            <button onclick="loadFileTree()">🔄</button>
+        </div>
+        <div id="file-tree">
+            <div style="padding: 20px; text-align: center; color: var(--border);">
+                Click 🔄 to load repository files
+            </div>
+        </div>
+    </div>
+
+    <div id="chat-container"></div>
+</div>
 
 <div id="controls">
     <textarea id="userInput" placeholder="Instruct file changes..."></textarea>
@@ -206,6 +379,17 @@
     <div style="display:flex; justify-content: flex-end; gap: 10px;">
         <button class="secondary" onclick="toggleSettings()">Cancel</button>
         <button onclick="saveSettings()">Save Keys</button>
+    </div>
+</div>
+
+<div class="overlay" id="viewer-overlay" onclick="closeFileViewer()" style="z-index: 12;"></div>
+<div id="file-viewer">
+    <div class="viewer-header">
+        <h3 id="viewer-filename"></h3>
+        <button onclick="closeFileViewer()">✕</button>
+    </div>
+    <div class="viewer-content">
+        <pre id="viewer-code"></pre>
     </div>
 </div>
 
@@ -230,67 +414,13 @@
         btn.innerText = theme === 'dark' ? '🌙' : '☀️';
     }
 
-    // --- MUTE LOGIC ---
-    let isMuted = localStorage.getItem('muted') === 'true';
-    
-    function initMute() {
-        updateMuteIcon(isMuted);
-    }
-
-    function toggleMute() {
-        isMuted = !isMuted;
-        localStorage.setItem('muted', isMuted);
-        updateMuteIcon(isMuted);
-    }
-
-    function updateMuteIcon(muted) {
-        const btn = document.getElementById('muteToggle');
-        btn.innerText = muted ? '🔇' : '🔊';
-    }
-
-    function playAudio(audioBase64) {
-        if (isMuted || !audioBase64) return;
-        
-        try {
-            const audio = new Audio('data:audio/mp3;base64,' + audioBase64);
-            audio.play().catch(e => console.error('Audio playback error:', e));
-        } catch (e) {
-            console.error('Audio creation error:', e);
-        }
-    }
-
-    // Initialize Theme and Mute
     initTheme();
-    initMute();
 
     // --- APP LOGIC ---
     const load = (id) => document.getElementById(id).value = localStorage.getItem(id) || '';
     ['apiKey', 'ghToken', 'ghUser', 'ghRepo'].forEach(load);
 
     let chatHistory = [];
-    let heartbeatInterval = null;
-
-    // Keep-alive heartbeat
-    function startHeartbeat() {
-        if (heartbeatInterval) return; // Already running
-        heartbeatInterval = setInterval(async () => {
-            try {
-                await fetch('/api/heartbeat');
-            } catch (e) {
-                console.log('Heartbeat failed:', e);
-            }
-        }, 30000); // Ping every 30 seconds
-    }
-
-    function stopHeartbeat() {
-        if (heartbeatInterval) {
-            clearInterval(heartbeatInterval);
-            heartbeatInterval = null;
-        }
-    }
-
-    // Start heartbeat on page load
-    startHeartbeat();
 
     function toggleSettings() {
         const el = document.getElementById('settingsModal');
@@ -305,6 +435,9 @@
             localStorage.setItem(id, document.getElementById(id).value);
         });
         toggleSettings();
+        if (localStorage.getItem('ghToken') && localStorage.getItem('ghUser') && localStorage.getItem('ghRepo')) {
+            loadFileTree();
+        }
     }
 
     async function sendMessage() {
@@ -328,62 +461,35 @@
 
         addMsg('bot', "Thinking & Checking Repo...");
 
-        // Set up AbortController for 5-minute timeout
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 300000); // 300,000 ms = 5 mins
+        const timeoutId = setTimeout(() => controller.abort(), 300000);
 
-        // Retry logic
-        let retries = 3;
-        let success = false;
+        try {
+            const res = await fetch('/api/chat', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(payload),
+                signal: controller.signal
+            });
+            
+            clearTimeout(timeoutId);
 
-        while (retries > 0 && !success) {
-            try {
-                const res = await fetch('/api/chat', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Connection': 'keep-alive'
-                    },
-                    body: JSON.stringify(payload),
-                    signal: controller.signal,
-                    keepalive: true
-                });
-                
-                // Clear timeout if successful response
-                clearTimeout(timeoutId);
+            const data = await res.json();
+            
+            const container = document.getElementById('chat-container');
+            container.removeChild(container.lastChild);
 
-                const data = await res.json();
-                
-                const container = document.getElementById('chat-container');
-                container.removeChild(container.lastChild); // Remove loading msg
+            if(data.execution_log && data.execution_log.length > 0) {
+                addMsg('bot', `[System]: Executed changes:\n${data.execution_log.join('\n')}`);
+            }
+            addMsg('bot', data.response);
 
-                if(data.execution_log && data.execution_log.length > 0) {
-                    addMsg('bot', `[System]: Executed changes:\n${data.execution_log.join('\n')}`);
-                }
-                addMsg('bot', data.response);
-                
-                // Play audio if available
-                if (data.audio) {
-                    playAudio(data.audio);
-                }
-
-                success = true;
-
-            } catch (e) {
-                retries--;
-                
-                if (retries === 0) {
-                    const container = document.getElementById('chat-container');
-                    // Check if it was our timeout
-                    if (e.name === 'AbortError') {
-                        addMsg('bot', `Error: Request timed out after 5 minutes.`);
-                    } else {
-                        addMsg('bot', `Error: ${e.message || e}`);
-                    }
-                } else {
-                    console.log(`Retry attempt ${4 - retries}/3...`);
-                    await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
-                }
+        } catch (e) {
+            const container = document.getElementById('chat-container');
+            if (e.name === 'AbortError') {
+                 addMsg('bot', `Error: Request timed out after 5 minutes.`);
+            } else {
+                 addMsg('bot', `Error: ${e}`);
             }
         }
     }
@@ -401,6 +507,161 @@
             if (chatHistory.length > 10) chatHistory.shift();
         }
     }
+
+    // --- FILE BROWSER LOGIC ---
+    let fileTreeData = [];
+
+    function toggleFileBrowser() {
+        const browser = document.getElementById('file-browser');
+        browser.classList.toggle('hidden');
+    }
+
+    async function loadFileTree() {
+        const ghToken = localStorage.getItem('ghToken');
+        const ghUser = localStorage.getItem('ghUser');
+        const ghRepo = localStorage.getItem('ghRepo');
+
+        if (!ghToken || !ghUser || !ghRepo) {
+            document.getElementById('file-tree').innerHTML = 
+                '<div style="padding: 20px; text-align: center; color: var(--border);">Configure API Keys first</div>';
+            return;
+        }
+
+        document.getElementById('file-tree').innerHTML = 
+            '<div style="padding: 20px; text-align: center;">Loading...</div>';
+
+        try {
+            const response = await fetch('/api/files', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ ghToken, ghUser, ghRepo })
+            });
+
+            const data = await response.json();
+            
+            if (data.error) {
+                document.getElementById('file-tree').innerHTML = 
+                    `<div style="padding: 20px; color: #ff6b6b;">${data.error}</div>`;
+                return;
+            }
+
+            fileTreeData = data.files;
+            renderFileTree();
+        } catch (e) {
+            document.getElementById('file-tree').innerHTML = 
+                `<div style="padding: 20px; color: #ff6b6b;">Error: ${e.message}</div>`;
+        }
+    }
+
+    function renderFileTree() {
+        const tree = buildTree(fileTreeData);
+        document.getElementById('file-tree').innerHTML = renderTree(tree);
+    }
+
+    function buildTree(files) {
+        const root = {};
+        
+        files.forEach(file => {
+            const parts = file.path.split('/');
+            let current = root;
+            
+            parts.forEach((part, idx) => {
+                if (!current[part]) {
+                    current[part] = idx === parts.length - 1 ? null : {};
+                }
+                if (current[part] !== null) {
+                    current = current[part];
+                }
+            });
+        });
+        
+        return root;
+    }
+
+    function renderTree(tree, path = '') {
+        let html = '';
+        const entries = Object.keys(tree).sort((a, b) => {
+            const aIsFile = tree[a] === null;
+            const bIsFile = tree[b] === null;
+            if (aIsFile === bIsFile) return a.localeCompare(b);
+            return aIsFile ? 1 : -1;
+        });
+
+        entries.forEach(name => {
+            const fullPath = path ? `${path}/${name}` : name;
+            const isFile = tree[name] === null;
+
+            if (isFile) {
+                html += `<div class="file-item" onclick="openFile('${fullPath}')">
+                    📄 ${name}
+                </div>`;
+            } else {
+                const folderId = fullPath.replace(/[^a-zA-Z0-9]/g, '_');
+                html += `<div>
+                    <div class="folder-item" onclick="toggleFolder('${folderId}')">
+                        <span class="folder-icon" id="icon-${folderId}">▶</span>
+                        📁 ${name}
+                    </div>
+                    <div class="folder-children" id="folder-${folderId}">
+                        ${renderTree(tree[name], fullPath)}
+                    </div>
+                </div>`;
+            }
+        });
+
+        return html;
+    }
+
+    function toggleFolder(folderId) {
+        const folder = document.getElementById(`folder-${folderId}`);
+        const icon = document.getElementById(`icon-${folderId}`);
+        
+        folder.classList.toggle('open');
+        icon.classList.toggle('open');
+    }
+
+    async function openFile(filepath) {
+        const ghToken = localStorage.getItem('ghToken');
+        const ghUser = localStorage.getItem('ghUser');
+        const ghRepo = localStorage.getItem('ghRepo');
+
+        document.getElementById('viewer-filename').textContent = filepath;
+        document.getElementById('viewer-code').textContent = 'Loading...';
+        document.getElementById('file-viewer').style.display = 'flex';
+        document.getElementById('viewer-overlay').style.display = 'block';
+
+        try {
+            const response = await fetch('/api/file-content', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ ghToken, ghUser, ghRepo, filepath })
+            });
+
+            const data = await response.json();
+            
+            if (data.error) {
+                document.getElementById('viewer-code').textContent = `Error: ${data.error}`;
+            } else {
+                document.getElementById('viewer-code').textContent = data.content;
+            }
+
+            document.querySelectorAll('.file-item').forEach(el => el.classList.remove('active'));
+            event.target.classList.add('active');
+        } catch (e) {
+            document.getElementById('viewer-code').textContent = `Error: ${e.message}`;
+        }
+    }
+
+    function closeFileViewer() {
+        document.getElementById('file-viewer').style.display = 'none';
+        document.getElementById('viewer-overlay').style.display = 'none';
+    }
+
+    window.addEventListener('load', () => {
+        if (localStorage.getItem('ghToken') && localStorage.getItem('ghUser') && localStorage.getItem('ghRepo')) {
+            loadFileTree();
+        }
+    });
 </script>
 
 </body>

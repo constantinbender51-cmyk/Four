@@ -84,7 +84,7 @@ def generate_audio(text):
     """Generate audio from text using gTTS and return as base64."""
     try:
         # Create gTTS object
-        tts = gTTS(text=text, lang='zh', slow=True)
+        tts = gTTS(text=text, lang='fr', slow=True)
         
         # Save to BytesIO object
         audio_fp = io.BytesIO()

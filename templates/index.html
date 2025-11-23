@@ -33,7 +33,7 @@
         body { 
             background: var(--bg); 
             color: var(--fg); 
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji"; /* System font for UI, Monospace for code */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
             margin: 0; 
             display: flex; 
             flex-direction: column; 
@@ -74,7 +74,7 @@
             max-width: 85%; 
             padding: 12px 16px; 
             border-radius: 8px; 
-            font-family: monospace; /* Keep code feel for chat */
+            font-family: monospace;
             line-height: 1.5;
             word-wrap: break-word;
         }
@@ -90,6 +90,15 @@
             background: var(--msg-bot); 
             border: 1px solid var(--border); 
             white-space: pre-wrap; 
+        }
+
+        .system { 
+            align-self: center; 
+            background: transparent; 
+            border: 1px solid var(--accent); 
+            color: var(--accent);
+            font-size: 0.9em;
+            max-width: 95%;
         }
 
         /* --- INPUT AREA --- */
@@ -129,6 +138,13 @@
         
         button:hover { opacity: 0.9; }
         button.secondary { background: transparent; border: 1px solid var(--border); color: var(--fg); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Mute button styling */
+        #muteButton {
+            padding: 5px 12px;
+            font-size: 1.2em;
+        }
 
         /* --- MODAL --- */
         .settings-modal { 
@@ -160,7 +176,7 @@
             
             #controls { flex-direction: column; }
             textarea { height: 60px; }
-            button { height: 44px; } /* Easy touch target */
+            button { height: 44px; }
             
             .msg { max-width: 95%; }
         }
@@ -172,6 +188,7 @@
     <div style="font-weight: bold; display:flex; align-items:center; gap:10px;">
         <span>🤖 AI Agent</span>
         <button class="secondary" id="themeToggle" onclick="toggleTheme()" style="padding: 5px 10px;">🌙</button>
+        <button class="secondary" id="muteButton" onclick="toggleMute()" style="padding: 5px 10px;">🔊</button>
     </div>
     <div class="header-controls">
         <select id="provider">
@@ -192,7 +209,7 @@
 
 <div id="controls">
     <textarea id="userInput" placeholder="Instruct file changes..."></textarea>
-    <button onclick="sendMessage()">Send</button>
+    <button id="sendButton" onclick="sendMessage()">Send</button>
 </div>
 
 <div class="overlay" id="overlay" onclick="toggleSettings()"></div>
@@ -209,6 +226,12 @@
 </div>
 
 <script>
+    // --- GLOBAL STATE ---
+    let chatHistory = [];
+    let isMuted = localStorage.getItem('isMuted') === 'true';
+    let currentAudio = null;
+    let isProcessing = false;
+
     // --- THEME LOGIC ---
     function initTheme() {
         const saved = localStorage.getItem('theme') || 'dark';
@@ -229,14 +252,70 @@
         btn.innerText = theme === 'dark' ? '🌙' : '☀️';
     }
 
-    // Initialize Theme immediately
+    // --- MUTE LOGIC ---
+    function toggleMute() {
+        isMuted = !isMuted;
+        localStorage.setItem('isMuted', isMuted);
+        updateMuteIcon();
+        
+        // Stop current audio if muting
+        if (isMuted && currentAudio) {
+            currentAudio.pause();
+            currentAudio = null;
+        }
+    }
+
+    function updateMuteIcon() {
+        const btn = document.getElementById('muteButton');
+        btn.innerText = isMuted ? '🔇' : '🔊';
+    }
+
+    // --- TTS LOGIC ---
+    async function playTextToSpeech(text) {
+        if (isMuted) return;
+        
+        // Stop any currently playing audio
+        if (currentAudio) {
+            currentAudio.pause();
+            currentAudio = null;
+        }
+
+        try {
+            const response = await fetch('/api/tts', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({text: text}),
+                signal: AbortSignal.timeout(30000) // 30 second timeout for TTS
+            });
+
+            if (!response.ok) {
+                console.error('TTS failed:', await response.text());
+                return;
+            }
+
+            const audioBlob = await response.blob();
+            const audioUrl = URL.createObjectURL(audioBlob);
+            
+            currentAudio = new Audio(audioUrl);
+            currentAudio.play();
+            
+            // Clean up after playing
+            currentAudio.onended = () => {
+                URL.revokeObjectURL(audioUrl);
+                currentAudio = null;
+            };
+        } catch (error) {
+            console.error('TTS Error:', error);
+        }
+    }
+
+    // Initialize Theme and Mute
     initTheme();
+    updateMuteIcon();
 
     // --- APP LOGIC ---
     const load = (id) => document.getElementById(id).value = localStorage.getItem(id) || '';
     ['apiKey', 'ghToken', 'ghUser', 'ghRepo'].forEach(load);
-
-    let chatHistory = [];
 
     function toggleSettings() {
         const el = document.getElementById('settingsModal');
@@ -254,9 +333,17 @@
     }
 
     async function sendMessage() {
+        if (isProcessing) return;
+        
         const input = document.getElementById('userInput');
-        const text = input.value;
+        const text = input.value.trim();
         if (!text) return;
+
+        // Disable send button during processing
+        isProcessing = true;
+        const sendButton = document.getElementById('sendButton');
+        sendButton.disabled = true;
+        sendButton.innerText = 'Processing...';
 
         addMsg('user', text);
         input.value = '';
@@ -272,40 +359,99 @@
             model: document.getElementById('model').value
         };
 
-        addMsg('bot', "Thinking & Checking Repo...");
-
-        // Set up AbortController for 5-minute timeout
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 300000); // 300,000 ms = 5 mins
+        addMsg('system', "🔄 Analyzing repository and processing request...");
 
         try {
-            const res = await fetch('/api/chat', {
+            // Robust fetch with timeout and retry logic
+            const response = await fetchWithRetry('/api/chat', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify(payload),
-                signal: controller.signal // Link signal to fetch
-            });
-            
-            // Clear timeout if successful response
-            clearTimeout(timeoutId);
+                body: JSON.stringify(payload)
+            }, 3);  // 3 retry attempts
 
-            const data = await res.json();
+            const data = await response.json();
             
             const container = document.getElementById('chat-container');
             container.removeChild(container.lastChild); // Remove loading msg
 
-            if(data.execution_log && data.execution_log.length > 0) {
-                addMsg('bot', `[System]: Executed changes:\n${data.execution_log.join('\n')}`);
+            // Display execution log if present
+            if (data.execution_log && data.execution_log.length > 0) {
+                addMsg('system', `✅ Changes applied:\n${data.execution_log.join('\n')}`);
             }
-            addMsg('bot', data.response);
 
-        } catch (e) {
+            // Display main response
+            const mainResponse = data.response;
+            addMsg('bot', mainResponse);
+            await playTextToSpeech(mainResponse);
+
+            // Display review if present
+            if (data.review) {
+                addMsg('system', `🔍 Review:\n${data.review}`);
+                await playTextToSpeech(data.review);
+            }
+
+            // Display review fixes if present
+            if (data.review_log && data.review_log.length > 0) {
+                addMsg('system', `🔧 Review fixes:\n${data.review_log.join('\n')}`);
+            }
+
+            // Display review error if present
+            if (data.review_error) {
+                addMsg('system', `⚠️ ${data.review_error}`);
+            }
+
+        } catch (error) {
             const container = document.getElementById('chat-container');
-            // Check if it was our timeout
-            if (e.name === 'AbortError') {
-                 addMsg('bot', `Error: Request timed out after 5 minutes.`);
-            } else {
-                 addMsg('bot', `Error: ${e}`);
+            if (container.lastChild && container.lastChild.classList.contains('system')) {
+                container.removeChild(container.lastChild);
+            }
+            
+            const errorMsg = error.name === 'AbortError' 
+                ? '⏱️ Request timed out. The operation took too long. Please try again.'
+                : `❌ Error: ${error.message}`;
+            
+            addMsg('system', errorMsg);
+            await playTextToSpeech(errorMsg);
+        } finally {
+            // Re-enable send button
+            isProcessing = false;
+            sendButton.disabled = false;
+            sendButton.innerText = 'Send';
+        }
+    }
+
+    // Robust fetch with retry logic
+    async function fetchWithRetry(url, options, retries = 3, timeout = 300000) {
+        for (let i = 0; i < retries; i++) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), timeout);
+                
+                const response = await fetch(url, {
+                    ...options,
+                    signal: controller.signal,
+                    keepalive: true  // Keep connection alive
+                });
+                
+                clearTimeout(timeoutId);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                return response;
+                
+            } catch (error) {
+                // If this is the last retry, throw the error
+                if (i === retries - 1) {
+                    throw error;
+                }
+                
+                // Wait before retrying (exponential backoff)
+                const delay = Math.min(1000 * Math.pow(2, i), 5000);
+                await new Promise(resolve => setTimeout(resolve, delay));
+                
+                console.log(`Retry attempt ${i + 1} after ${delay}ms...`);
             }
         }
     }
@@ -320,9 +466,26 @@
 
         if (sender !== 'system') {
             chatHistory.push({sender, text});
-            if (chatHistory.length > 10) chatHistory.shift();
+            if (chatHistory.length > 20) chatHistory.shift();
         }
     }
+
+    // Allow Enter to send (Shift+Enter for newline)
+    document.getElementById('userInput').addEventListener('keydown', function(e) {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    });
+
+    // Keep connection alive by pinging server periodically
+    setInterval(async () => {
+        try {
+            await fetch('/');
+        } catch (error) {
+            console.log('Keep-alive ping failed:', error);
+        }
+    }, 60000); // Ping every 60 seconds
 </script>
 
 </body>

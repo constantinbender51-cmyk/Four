@@ -190,5 +190,11 @@ def query_llm(provider, api_key, model_name, history, repo_context, user_msg):
         else:
             return json.loads(text_response.strip())
 
+    except json.JSONDecodeError as e:
+        # Return the raw response if JSON parsing fails for debugging
+        return {
+            "message": f"⚠️ JSON Parse Error: {str(e)}\n\n--- RAW LLM RESPONSE ---\n{text_response}\n--- END RAW RESPONSE ---",
+            "changes": []
+        }
     except Exception as e:
-        return {"message": f"Error calling API or parsing JSON: {str(e)}", "changes": []}
+        return {"message": f"Error calling API: {str(e)}", "changes": []}

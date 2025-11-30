@@ -57,12 +57,14 @@
             flex-direction: column;
             overflow: hidden;
             transition: transform 0.3s;
-        }
-
-        #file-browser.hidden {
             transform: translateX(-100%);
             position: absolute;
             z-index: 3;
+            height: calc(100vh - 60px);
+        }
+
+        #file-browser.visible {
+            transform: translateX(0);
         }
 
         .browser-header {
@@ -172,10 +174,6 @@
             line-height: 1.6;
             white-space: pre-wrap;
             word-wrap: break-word;
-        }
-
-        #toggle-browser {
-            display: none;
         }
 
         /* --- HEADER --- */
@@ -302,20 +300,8 @@
             .msg { max-width: 95%; }
 
             #file-browser {
-                position: absolute;
                 width: 80%;
                 max-width: 300px;
-                height: 100%;
-                z-index: 10;
-            }
-
-            #file-browser.hidden {
-                transform: translateX(-100%);
-            }
-
-            #toggle-browser {
-                display: block;
-                padding: 5px 10px;
             }
 
             #file-viewer {
@@ -374,7 +360,8 @@
 <div class="overlay" id="overlay" onclick="toggleSettings()"></div>
 <div class="settings-modal" id="settingsModal">
     <h3>Configuration</h3>
-    <input type="text" id="apiKey" placeholder="LLM API Key (Gemini/DeepSeek)">
+    <input type="text" id="geminiApiKey" placeholder="Gemini API Key">
+    <input type="text" id="deepseekApiKey" placeholder="DeepSeek API Key">
     <input type="text" id="ghToken" placeholder="GitHub PAT (Fine-grained)">
     <input type="text" id="ghUser" placeholder="GitHub Username">
     <input type="text" id="ghRepo" placeholder="Repository Name">
@@ -451,7 +438,7 @@
 
     // --- APP LOGIC ---
     const load = (id) => document.getElementById(id).value = localStorage.getItem(id) || '';
-    ['apiKey', 'ghToken', 'ghUser', 'ghRepo'].forEach(load);
+    ['geminiApiKey', 'deepseekApiKey', 'ghToken', 'ghUser', 'ghRepo'].forEach(load);
 
     let chatHistory = [];
     let heartbeatInterval = null;
@@ -486,7 +473,7 @@
     }
 
     function saveSettings() {
-        ['apiKey', 'ghToken', 'ghUser', 'ghRepo'].forEach(id => {
+        ['geminiApiKey', 'deepseekApiKey', 'ghToken', 'ghUser', 'ghRepo'].forEach(id => {
             localStorage.setItem(id, document.getElementById(id).value);
         });
         toggleSettings();
@@ -503,14 +490,19 @@
         addMsg('user', text);
         input.value = '';
 
+        const provider = document.getElementById('provider').value;
+        const apiKey = provider === 'gemini' 
+            ? localStorage.getItem('geminiApiKey') 
+            : localStorage.getItem('deepseekApiKey');
+
         const payload = {
             message: text,
             history: chatHistory,
-            apiKey: localStorage.getItem('apiKey'),
+            apiKey: apiKey,
             ghToken: localStorage.getItem('ghToken'),
             ghUser: localStorage.getItem('ghUser'),
             ghRepo: localStorage.getItem('ghRepo'),
-            provider: document.getElementById('provider').value,
+            provider: provider,
             model: document.getElementById('model').value
         };
 
@@ -590,7 +582,7 @@
 
     function toggleFileBrowser() {
         const browser = document.getElementById('file-browser');
-        browser.classList.toggle('hidden');
+        browser.classList.toggle('visible');
     }
 
     async function loadFileTree() {

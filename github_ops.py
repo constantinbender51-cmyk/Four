@@ -11,8 +11,17 @@ def get_file_content(token, owner, repo, path, branch="main"):
     if response.status_code == 200:
         content = response.json()
         file_sha = content['sha']
-        decoded_content = base64.b64decode(content['content']).decode('utf-8')
-        return decoded_content, file_sha
+        try:
+            # Decode base64 then try to decode as UTF-8
+            file_bytes = base64.b64decode(content['content'])
+            decoded_content = file_bytes.decode('utf-8')
+            return decoded_content, file_sha
+        except UnicodeDecodeError:
+            # Handle binary files (images, compiled code, etc.)
+            return f"[Binary File: {path}]", file_sha
+        except Exception as e:
+            return f"[Error reading file: {str(e)}]", file_sha
+            
     return None, None
 
 def get_file_list(token, owner, repo, branch="main"):
@@ -41,20 +50,15 @@ def get_repo_structure(token, owner, repo, branch="main"):
     headers = {"Authorization": f"Bearer {token}"}
     response = requests.get(url, headers=headers)
     
-    # Files to explicitly include even if they don't have standard extensions
-    config_files = {'Procfile', 'Dockerfile', 'Makefile', '.gitignore', 'requirements.txt'}
-    allowed_extensions = ('.py', '.md', '.txt', '.js', '.html', '.css', '.json', '.yml', '.yaml')
-
     files_context = ""
     if response.status_code == 200:
         tree = response.json().get('tree', [])
         for item in tree:
             path = item['path']
-            # Check if it's a blob (file) and matches our filter
-            is_config = path.split('/')[-1] in config_files
-            is_code = path.endswith(allowed_extensions)
             
-            if item['type'] == 'blob' and (is_code or is_config):
+            # Check if it's a blob (file)
+            if item['type'] == 'blob':
+                # No longer filtering by extension - include ALL files
                 content, _ = get_file_content(token, owner, repo, path, branch)
                 if content:
                     files_context += f"\n{'='*60}\n"

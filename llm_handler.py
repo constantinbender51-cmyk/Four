@@ -153,20 +153,41 @@ def query_llm(provider, api_key, model_name, history, repo_context, user_msg):
         if provider == 'gemini':
             genai.configure(api_key=api_key)
             model = genai.GenerativeModel(model_name)
+            
             # Format for Gemini
             chat_history = []
             for m in messages:
                 role = "user" if m['role'] in ['user', 'system'] else "model"
                 chat_history.append({"role": role, "parts": [m['content']]})
             
-            # Add generation config with max_tokens
+            # --- CONFIGURATION LOGIC ---
             generation_config = {
                 "max_output_tokens": 8000,
             }
+
+            # 1. Temperature & Thinking Config
+            # Gemini 3 models require high temp and support thinking
+            if "gemini-3" in model_name:
+                generation_config["temperature"] = 1.0 
+                # Note: Only works if the specific preview model supports 'include_thoughts'
+                # generation_config["thinking_config"] = {"include_thoughts": True} 
+            else:
+                # Gemini 2.5/2.0 prefer low temp for coding precision
+                generation_config["temperature"] = 0.2
+
+            # 2. Safety Settings
+            # Set all to BLOCK_ONLY_HIGH to avoid blocking code keywords like "kill", "attack", etc.
+            safety_settings = [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_ONLY_HIGH"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_ONLY_HIGH"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_ONLY_HIGH"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_ONLY_HIGH"},
+            ]
             
             response = model.generate_content(
                 chat_history,
-                generation_config=generation_config
+                generation_config=generation_config,
+                safety_settings=safety_settings
             )
             text_response = response.text
             
@@ -176,7 +197,8 @@ def query_llm(provider, api_key, model_name, history, repo_context, user_msg):
                 model=model_name,
                 messages=messages,
                 response_format={ "type": "json_object" },
-                max_tokens=8000
+                max_tokens=8000,
+                temperature=0.0 # DeepSeek usually prefers 0 for code
             )
             text_response = response.choices[0].message.content
             
